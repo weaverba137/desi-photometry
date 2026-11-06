@@ -492,7 +492,10 @@ def targetphot(specprod, zcatdir, outdir, comm=None, mp=1, nside=1,
                 _, zcatfile, _ = get_targetphot_filenames(
                     survey, program, specprod, outdir=outdir, potential=False)
             else:
-                zcatfile = os.path.join(zcatdir, f'ztile-{survey}-{program}-cumulative.fits')
+                if os.path.basename(zcatdir) == 'v2':
+                    zcatfile = os.path.join(zcatdir, survey, f'ztile-{survey}-{program}-cumulative.fits')
+                else:
+                    zcatfile = os.path.join(zcatdir, f'ztile-{survey}-{program}-cumulative.fits')
 
             if not os.path.isfile(zcatfile):
                 if rank == 0:
