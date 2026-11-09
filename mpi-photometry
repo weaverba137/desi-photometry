@@ -1082,8 +1082,9 @@ def main():
     parser.add_argument('--targetphot-potential', action='store_true', help='Build the potential targets targeting catalogs.')
     parser.add_argument('--tractorphot-potential', action='store_true', help='Build the potential targets tractor catalogs.')
 
-    parser.add_argument('--validate-targetphot', action='store_true', help='Validate the targetphot catalogs.')
-    parser.add_argument('--validate-tractorphot', action='store_true', help='Validate the photo-tractor catalogs.')
+    # These don't do anything at the present time. Perhaps this was a placeholder for merging validate-files.
+    # parser.add_argument('--validate-targetphot', action='store_true', help='Validate the targetphot catalogs.')
+    # parser.add_argument('--validate-tractorphot', action='store_true', help='Validate the photo-tractor catalogs.')
 
     parser.add_argument('--mp', type=int, default=1, help='Number of multiprocessing processes per MPI rank or node (deprecated).')
     parser.add_argument('--debug-ntiles', type=int, default=None, help='Debug with a smaller number of (test) tiles, e.g., --debug-ntiles=10.')
