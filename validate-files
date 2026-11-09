@@ -93,6 +93,7 @@ def fileinfo(filelist, specprod, subdir):
     print('| File Name | File Size | Number of Targets | Notes |')
     print('|-----------|:---------:|:-----------------:|-------|')
     for onefile, nrow, sz in zip(filelist[srt], nrows[srt], szs[srt]):
+        print(onefile, nrow, sz)
         if sz > 1024**2 and sz < 1024**3:
             sz /= 1024**2
             unit = 'MB'
