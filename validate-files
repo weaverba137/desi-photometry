@@ -140,6 +140,7 @@ def main():
         surveys = ['special', 'main']
     else:
         surveys = ['cmx', 'special', 'sv1', 'sv2', 'sv3', 'main']
+    programs = ('backup', 'bright', 'dark', 'other')
 
     # Do statistics.
     if args.statistics:
@@ -165,9 +166,6 @@ def main():
                                                  'targetphot{}-{}-{}.fits'.format(targsuffix, survey, args.specprod)))
                 filelist.append(os.path.join(args.outdir, '{}-targets'.format(targtype),
                                              'targetphot{}-{}.fits'.format(targsuffix, args.specprod)))
-            #else:
-            #    filelist = glob(os.path.join(args.outdir, '{}-targets'.format(targtype),
-            #                                 'targetphot{}-*{}.fits'.format(targsuffix, args.specprod)))
             filelist = np.array(filelist, dtype=object)
             fileinfo(filelist, args.specprod, '{}-targets'.format(targtype))
             print()
@@ -184,6 +182,7 @@ def main():
                 nobj.append(fitsio.FITS(onefile)[1].get_nrows())
             sz = np.sum(sz)
             nobj = np.sum(nobj)
+            print(sz, nobj)
             if sz > 1024**2 and sz < 1024**3:
                 sz /= 1024**2
                 unit = 'MB'
@@ -193,38 +192,39 @@ def main():
                 unit = 'GB'
             print('| Data Release | Relative Location of *tractorphot* Files | Number of Files | Total Data Volume | Total Number of Objects |')
             print('|--------------|------------------------------------------|:---------------:|:-----------------:|:-----------------------:|')
-            print('| {} | {}-targets/tractorphot/tractorphot{}-nside4-hp[0-9][0-9][0-9]-{}.fits | {} | {:.3g} {} | {:,d} |'.format(
-                args.specprod, targtype, targsuffix, args.specprod, nfiles, sz, unit, nobj))
+            print('| {} | {}-targets/tractorphot/tractorphot{}-nside4-hp[0-9][0-9][0-9]-{}.fits | {} | {:.3g} {} | {} |'.format(
+                  args.specprod, targtype, targsuffix, args.specprod, nfiles, sz, unit, nobj))
             print()
 
     # Validate files.
     if args.validate:
         for survey in surveys:
-            print('Working on survey {}'.format(survey))
-            obsfile = os.path.join(args.outdir, 'observed-targets', 'targetphot-{}-{}.fits'.format(survey, args.specprod))
-            potfile = os.path.join(args.outdir, 'potential-targets', 'targetphot-potential-{}-{}.fits'.format(survey, args.specprod))
-            #if not os.path.isfile(obsfile):
-            #    continue
+            for program in programs:
+                print('Working on survey, program {}, {}.'.format(survey, program))
+                obsfile = os.path.join(args.outdir, 'observed-targets', 'targetphot-{}-{}-{}.fits'.format(survey, program, args.specprod))
+                potfile = os.path.join(args.outdir, 'potential-targets', 'targetphot-potential-{}-{}-{}.fits'.format(survey, program, args.specprod))
+                # if not os.path.isfile(obsfile):
+                #    continue
 
-            obs = Table(fitsio.read(obsfile))
-            print('Read {:,d} objects from {}'.format(len(obs), obsfile))
-            pot = Table(fitsio.read(potfile))
-            print('Read {:,d} objects from {}'.format(len(pot), potfile))
+                obs = Table(fitsio.read(obsfile))
+                print('Read {:,d} objects from {}'.format(len(obs), obsfile))
+                pot = Table(fitsio.read(potfile))
+                print('Read {:,d} objects from {}'.format(len(pot), potfile))
 
-            #obs = obs[obs['TILEID'] == 80870]
+                # obs = obs[obs['TILEID'] == 80870]
 
-            tileids = sorted(set(obs['TILEID']))
-            print('Processing {} unique tiles'.format(len(tileids)))
+                tileids = sorted(set(obs['TILEID']))
+                print('Processing {} unique tiles'.format(len(tileids)))
 
-            # Multiprocess over tiles
-            mpargs = [[tileid, obs[obs['TILEID'] == tileid], pot[pot['TILEID'] == tileid]] for tileid in tileids]
+                # Multiprocess over tiles
+                mpargs = [[tileid, obs[obs['TILEID'] == tileid], pot[pot['TILEID'] == tileid]] for tileid in tileids]
 
-            if args.mp > 1:
-                with multiprocessing.get_context('fork').Pool(args.mp) as P:
-                    P.map(_targets_one_tile, mpargs)
-            else:
-                [targets_one_tile(*mparg) for mparg in mpargs]
-        print()
+                if args.mp > 1:
+                    with multiprocessing.get_context('fork').Pool(args.mp) as P:
+                        P.map(_targets_one_tile, mpargs)
+                else:
+                    [targets_one_tile(*mparg) for mparg in mpargs]
+            print()
     return 0
 
 
