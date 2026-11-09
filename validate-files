@@ -82,10 +82,12 @@ def fileinfo(filelist, specprod, subdir):
                 nrows.append(fitsio.FITS(onefile)[1].get_nrows())
             else:
                 print(f'Missing {onefile}')
+    print(nrows, szs)
     szs = np.array(szs)
     nrows = np.array(nrows)
     if len(nrows) == 0:
         return
+    print(nrows, szs)
 
     #srt = np.argsort(nrows)
     srt = np.arange(len(nrows))
