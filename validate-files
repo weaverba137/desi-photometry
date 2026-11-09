@@ -147,25 +147,28 @@ def main():
         # targetphot files
         for targtype, targsuffix in zip(['observed', 'potential'], ['', '-potential']):
             print(f'targetphot - {targtype} targets')
-            if args.specprod == 'iron':
-                filelist = []
-                for survey in surveys:
-                    if survey == 'main' and targtype == 'potential':
-                        mainlist = sorted(glob(os.path.join(args.outdir, f'{targtype}-targets',
-                                                            f'targetphot{targsuffix}-nside2-hp??-{survey}-{args.specprod}.fits')))
-                        filelist.append(mainlist)
-                    else:
-                        filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
-                                                     f'targetphot{targsuffix}-{survey}-{args.specprod}.fits'))
-                filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
-                                             f'targetphot{targsuffix}-{args.specprod}.fits'))
-            else:
-                filelist = []
+            filelist = list()
+            if args.specprod == 'fuji':
                 for survey in surveys:
                     filelist.append(os.path.join(args.outdir, '{}-targets'.format(targtype),
                                                  'targetphot{}-{}-{}.fits'.format(targsuffix, survey, args.specprod)))
                 filelist.append(os.path.join(args.outdir, '{}-targets'.format(targtype),
                                              'targetphot{}-{}.fits'.format(targsuffix, args.specprod)))
+            elif args.specprod in ('guadalupe', 'iron'):
+                for survey in surveys:
+                    filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
+                                                f'targetphot{targsuffix}-{args.specprod}.fits'))
+            else:
+                for survey in surveys:
+                    for program in programs:
+                        if survey == 'main':
+                            mainlist = sorted(glob(os.path.join(args.outdir, f'{targtype}-targets',
+                                                                f'targetphot{targsuffix}-nside2-hp??-{survey}-{program}-{args.specprod}.fits')))
+                            filelist.append(mainlist)
+                        else:
+                            filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
+                                                        f'targetphot{targsuffix}-{survey}-{program}-{args.specprod}.fits'))
+
             filelist = np.array(filelist, dtype=object)
             fileinfo(filelist, args.specprod, '{}-targets'.format(targtype))
             print()
@@ -174,7 +177,7 @@ def main():
         for targtype, targsuffix in zip(['observed', 'potential'], ['', '-potential']):
             print('tractorphot - {} targets'.format(targtype))
             filelist = glob(os.path.join(args.outdir, '{}-targets'.format(targtype), 'tractorphot',
-                                         'tractorphot{}-nside4-hp???-{}.fits'.format(targsuffix, args.specprod)))
+                                         'tractorphot{}-nside?-hp???-{}.fits'.format(targsuffix, args.specprod)))
             nfiles = len(filelist)
             sz, nobj = [], []
             for onefile in filelist:
@@ -192,7 +195,7 @@ def main():
                 unit = 'GB'
             print('| Data Release | Relative Location of *tractorphot* Files | Number of Files | Total Data Volume | Total Number of Objects |')
             print('|--------------|------------------------------------------|:---------------:|:-----------------:|:-----------------------:|')
-            print('| {} | {}-targets/tractorphot/tractorphot{}-nside4-hp[0-9][0-9][0-9]-{}.fits | {} | {:.3g} {} | {} |'.format(
+            print('| {} | {}-targets/tractorphot/tractorphot{}-nside[48]-hp[0-9][0-9][0-9]-{}.fits | {} | {:.3g} {} | {} |'.format(
                   args.specprod, targtype, targsuffix, args.specprod, nfiles, sz, unit, nobj))
             print()
 
