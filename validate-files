@@ -78,9 +78,11 @@ def fileinfo(filelist, specprod, subdir):
             nrows.append(np.sum(np.array(_nrows, dtype=np.int64)))
         else:
             if os.path.isfile(onefile):
-                szs.append(os.stat(onefile).st_size)
-                nrows.append(fitsio.FITS(onefile)[1].get_nrows())
+                szs.append(np.int64(os.stat(onefile).st_size))
+                nrows.append(np.int64(fitsio.FITS(onefile)[1].get_nrows()))
             else:
+                szs.append(np.int64(0))
+                nrows.append(np.int64(0))
                 print(f'Missing {onefile}')
     print(nrows, szs)
     szs = np.array(szs, dtype=np.int64)
@@ -89,7 +91,7 @@ def fileinfo(filelist, specprod, subdir):
         return
     print(nrows, szs)
 
-    srt = np.argsort(nrows)
+    srt = np.argsort(nrows)[::-1]
     # srt = np.arange(len(nrows))
 
     print('| File Name | File Size | Number of Targets | Notes |')
@@ -106,9 +108,13 @@ def fileinfo(filelist, specprod, subdir):
 
         if type(onefile) == list:
             # iron/main potential targets are a list
-            #basefile = os.path.basename(onefile[0])
+            # basefile = os.path.basename(onefile[0])
             survey = 'main'
-            basefile = f'potential-targets/targetphot-potential-nside2-hp[0-9][0-9]-{survey}-{specprod}.fits'
+            if 'potential' in subdir:
+                targsuffix = '-potential'
+            else:
+                targsuffix = ''
+            basefile = f'{subdir}/targetphot{targsuffix}-nside?-hp[0-9][0-9][0-9]?-{survey}-{specprod}.fits'
         else:
             basefile = os.path.basename(onefile)
             survey = basefile.split('-')[1]
@@ -170,9 +176,9 @@ def main():
                             filelist.append(mainlist)
                         else:
                             filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
-                                                        f'targetphot{targsuffix}-{survey}-{program}-{args.specprod}.fits'))
+                                                         f'targetphot{targsuffix}-{survey}-{program}-{args.specprod}.fits'))
 
-            filelist = np.array(filelist, dtype=object)
+            # filelist = np.array(filelist, dtype=object)
             fileinfo(filelist, args.specprod, '{}-targets'.format(targtype))
             print()
 
