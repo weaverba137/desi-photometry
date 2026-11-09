@@ -74,8 +74,8 @@ def fileinfo(filelist, specprod, subdir):
                     _nrows.append(fitsio.FITS(_onefile)[1].get_nrows())
                 else:
                     print(f'Missing {_onefile}')
-            szs.append(np.sum(_szs))
-            nrows.append(np.sum(_nrows))
+            szs.append(np.sum(np.array(_szs, dtype=np.int64)))
+            nrows.append(np.sum(np.array(_nrows, dtype=np.int64)))
         else:
             if os.path.isfile(onefile):
                 szs.append(os.stat(onefile).st_size)
@@ -83,14 +83,14 @@ def fileinfo(filelist, specprod, subdir):
             else:
                 print(f'Missing {onefile}')
     print(nrows, szs)
-    szs = np.array(szs)
-    nrows = np.array(nrows)
+    szs = np.array(szs, dtype=np.int64)
+    nrows = np.array(nrows, dtype=np.int64)
     if len(nrows) == 0:
         return
     print(nrows, szs)
 
-    #srt = np.argsort(nrows)
-    srt = np.arange(len(nrows))
+    srt = np.argsort(nrows)
+    # srt = np.arange(len(nrows))
 
     print('| File Name | File Size | Number of Targets | Notes |')
     print('|-----------|:---------:|:-----------------:|-------|')
