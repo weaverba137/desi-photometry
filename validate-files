@@ -138,9 +138,9 @@ def target_statistics(specprod, info):
                 else:
                     g = info[k][f]['groups']
                     if program:
-                        name = f"targetphot{g[0]}-nside{g[1]}-hp[0-9]{{{len(g[2])}}}-{survey}-{program}-{specprod}\\.fits"
+                        name = f"targetphot{g[0]}-nside{g[1]}-hp{'?'*len(g[2])}-{survey}-{program}-{specprod}.fits"
                     else:
-                        name = f"targetphot{g[0]}-nside{g[1]}-hp[0-9]{{{len(g[2])}}}-{survey}-{specprod}\\.fits"
+                        name = f"targetphot{g[0]}-nside{g[1]}-hp{'?'*len(g[2])}-{survey}-{specprod}.fits"
                     hp_totals[(survey, program)] = {'size': info[k][f]['size'],
                                                     'rows': info[k][f]['rows'],
                                                     'name': name}
@@ -169,7 +169,7 @@ def tractor_statistics(specprod, info):
         table[k] = ['| File Name | File Size | Number of Targets | Notes |',
                     '|-----------|:---------:|:-----------------:|-------|']
         ex = info[k][list(info[k].keys())[0]]
-        generic_name = f"tractorphot{ex['groups'][0]}-nside{ex['groups'][1]}-hp[0-9]{{{len(ex['groups'][2])}}}-{specprod}\\.fits"
+        generic_name = f"tractorphot{ex['groups'][0]}-nside{ex['groups'][1]}-hp{'?'*len(ex['groups'][2])}-{specprod}.fits"
         total_size = sum([info[k][f]['size'] for f in info[k]])
         total_rows = sum([info[k][f]['rows'] for f in info[k]])
         table[k].append(f"| {generic_name} | {fmt_bytes(total_size)} | {total_rows:,d} | |")
@@ -249,9 +249,9 @@ def main():
         statistics_report += target_tables['observed']
         statistics_report += ['## target files, potential', '']
         statistics_report += target_tables['potential']
-        statistics_report += ['## tractor files, potential', '']
+        statistics_report += ['## tractor files, observed', '']
         statistics_report += tractor_tables['observed']
-        statistics_report += ['## tractor_files, potential', '']
+        statistics_report += ['## tractor files, potential', '']
         statistics_report += tractor_tables['potential']
         print("\n".join(statistics_report))
     #
