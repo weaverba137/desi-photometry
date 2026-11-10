@@ -16,6 +16,10 @@ import multiprocessing
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table, hstack
+from desiutil.log import get_logger, DEBUG
+
+
+log = None
 
 
 def _targets_one_tile(args):
@@ -27,7 +31,7 @@ def _targets_one_tile(args):
 def targets_one_tile(tileid, obstile, pottile):
     """Check one file.
     """
-    print(f'  Checking tile {tileid}')
+    log.info('Checking tile %d.', tileid)
     # Check that the set of targetids are unique.
     try:
         assert len(obstile) == len(np.unique(obstile['TARGETID']))
@@ -38,7 +42,7 @@ def targets_one_tile(tileid, obstile, pottile):
         K = np.isin(obstile['TARGETID'], pottile['TARGETID'], assume_unique=True)
         assert len(K) == len(obstile['TARGETID'])
     except AssertionError:
-        print(f'  Problem with tile {tileid}!')
+        log.warning('Problem with tile %d!', tileid)
 
     # Now, ensure that the data stored in the potential and observed catalogs
     # *for the same objects* are identical.
@@ -52,7 +56,7 @@ def targets_one_tile(tileid, obstile, pottile):
             J = ~np.isnan(obstile[col][diff]) # need to check nan separately
             if np.sum(J) > 0:
                 diff = diff[J]
-                print(col, pot[col][diff].data, obstile[col][diff].data)
+                log.warning(col, pot[col][diff].data, obstile[col][diff].data)
 
 
 def find_files(output_dir):
@@ -221,14 +225,20 @@ def main():
     :class:`int`
         An integer suitable for passing to :func:`sys.exit`.
     """
+    global log
     p = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]))
+    p.add_argument('-d', '--debug', action='store_true', help='Print extra information.')
     p.add_argument('--specprod', choices=['fuji', 'iron', 'guadalupe', 'loa', 'nevis'],
                    help='Spectroscopic data reduction.')
     p.add_argument('--mp', type=int, default=1, metavar='N', help='Number of multiprocessing cores.')
-    p.add_argument('--statistics', action='store_true', help='Do file statistics.')
-    p.add_argument('--validate', action='store_true', help='Validate the files.')
+    p.add_argument('-s', '--statistics', action='store_true', help='Do file statistics.')
+    p.add_argument('-v', '--validate', action='store_true', help='Validate the files.')
     p.add_argument('outdir', metavar='DIR', help='Output directory.')
     args = p.parse_args()
+    if args.debug:
+        log = get_logger(DEBUG)
+    else:
+        log = get_logger()
     #
     # Find files.
     #
@@ -253,7 +263,10 @@ def main():
         statistics_report += tractor_tables['observed']
         statistics_report += ['## tractor files, potential', '']
         statistics_report += tractor_tables['potential']
-        print("\n".join(statistics_report))
+        report_file = os.path.join(os.getcwd(), 'validate-files.md')
+        log.info('Writing %s.', report_file)
+        with open(report_file, 'w') as MD:
+            MD.write("\n".join(statistics_report))
     #
     # Validate files.
     #
@@ -263,7 +276,7 @@ def main():
         #
         pairs = validation_pairs(target)
         for survey, program in pairs:
-            print('Working on survey, program {}, {}.'.format(survey, program))
+            log.info('Working on survey, program: %s, %s.', survey, program)
             obs_files = pairs[(survey, program)][0]
             pot_files = pairs[(survey, program)][1]
             if isinstance(obs_files, str):
@@ -272,12 +285,12 @@ def main():
             obs_tables = list()
             for obs_file in obs_files:
                 obs = Table.read(obs_file, hdu='TARGETPHOT')
-                print('Read {:,d} objects from {}'.format(len(obs), obs_file))
+                log.info('Read %d objects from %s.', len(obs), obs_file)
                 obs_tables.append(obs)
             pot_tables = list()
             for pot_file in pot_files:
                 pot = Table.read(pot_file, hdu='TARGETPHOT')
-                print('Read {:,d} objects from {}'.format(len(pot), pot_file))
+                log.info('Read %d objects from %s.', len(pot), pot_file)
                 pot_tables.append(pot)
             if len(obs_files) == 1:
                 obs = obs_tables[0]
@@ -286,7 +299,7 @@ def main():
                 obs = hstack(obs_tables)
                 pot = hstack(pot_tables)
             tileids = np.unique(obs['TILEID'])
-            print('Processing {} unique tiles'.format(len(tileids)))
+            log.info('Processing %d unique tiles.', len(tileids))
             #
             # Multiprocess over tiles
             #
