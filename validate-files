@@ -253,7 +253,7 @@ def main():
         statistics_report += tractor_tables['observed']
         statistics_report += ['## tractor_files, potential', '']
         statistics_report += tractor_tables['potential']
-        print("\n".join())
+        print("\n".join(statistics_report))
     #
     # Validate files.
     #
