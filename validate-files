@@ -9,43 +9,43 @@ $HOME/code/desihub/desi-photometry/validate-files --specprod guadalupe --statist
 """
 import os
 import sys
+import re
 import argparse
 from glob import glob
-import numpy as np
-import fitsio
 import multiprocessing
-from astropy.table import Table
+import numpy as np
+from astropy.io import fits
+from astropy.table import Table, hstack
 
 
 def _targets_one_tile(args):
-    """Multiprocessing wrapper."""
+    """Multiprocessing wrapper.
+    """
     return targets_one_tile(*args)
 
 
 def targets_one_tile(tileid, obstile, pottile):
     """Check one file.
-
     """
     print(f'  Checking tile {tileid}')
     # Check that the set of targetids are unique.
     try:
-        assert(len(obstile) == len(np.unique(obstile['TARGETID'])))
-        assert(len(pottile) == len(np.unique(pottile['TARGETID'])))
+        assert len(obstile) == len(np.unique(obstile['TARGETID']))
+        assert len(pottile) == len(np.unique(pottile['TARGETID']))
 
     # Check that every target in the targetphot file is also in the
     # targetphot-potential file.
         K = np.isin(obstile['TARGETID'], pottile['TARGETID'], assume_unique=True)
-        assert(len(K) == len(obstile['TARGETID']))
-    except:
+        assert len(K) == len(obstile['TARGETID'])
+    except AssertionError:
         print(f'  Problem with tile {tileid}!')
-        #pdb.set_trace()
 
     # Now, ensure that the data stored in the potential and observed catalogs
     # *for the same objects* are identical.
-    #I = np.isin(pottile['TARGETID'], obstile['TARGETID'], assume_unique=True)
+    # I = np.isin(pottile['TARGETID'], obstile['TARGETID'], assume_unique=True)
     I = np.hstack([np.where(tid == pottile['TARGETID'])[0] for tid in obstile['TARGETID']])
     pot = pottile[I]
-    assert(np.all(pot['TARGETID'] == obstile['TARGETID']))
+    assert np.all(pot['TARGETID'] == obstile['TARGETID'])
     for col in pot.colnames:
         diff = np.where(pot[col] != obstile[col])[0]
         if len(diff) > 0:
@@ -55,76 +55,162 @@ def targets_one_tile(tileid, obstile, pottile):
                 print(col, pot[col][diff].data, obstile[col][diff].data)
 
 
-def fileinfo(filelist, specprod, subdir):
+def find_files(output_dir):
+    """Find target and photometry files in `output_dir`.
+    """
+    target, tractor = dict(), dict()
+    for k in ('observed', 'potential'):
+        target[k] = glob(os.path.join(output_dir, f'{k}-targets', '*.fits'))
+        tractor[k] = glob(os.path.join(output_dir, f'{k}-targets', 'tractorphot', '*.fits'))
+    return (target, tractor)
 
-    dsurvey = {
-        'cmx': 'Commissioning Survey', 'special': 'Special targets',
-        'sv1': 'Survey Validation 1', 'sv2': 'Survey Validation 2',
-        'sv3': 'Survey Validation 3', 'main': 'Main Survey',
-        f'{specprod}.fits': 'Stack of the preceding XX catalogs.'}
 
-    nrows, szs = [], []
-    for onefile in filelist:
-        # iron/main potential targets are split by healpix
-        if type(onefile) == list:
-            _nrows, _szs = [], []
-            for _onefile in onefile:
-                if os.path.isfile(_onefile):
-                    _szs.append(os.stat(_onefile).st_size)
-                    _nrows.append(fitsio.FITS(_onefile)[1].get_nrows())
+def verify_filenames(specprod, target, tractor):
+    """Verify the names of the files found by find_files.
+    """
+    target_re = re.compile(f'targetphot(-potential|)(-[a-z123]+)?(-[a-z-]+)?-{specprod}\\.fits')
+    target_hp_re = re.compile(f'targetphot(-potential|)-nside([0-9]+)-hp([0-9]+)-([a-z123]+)([a-z-]+)?-{specprod}\\.fits')
+    tractor_re = re.compile(f'tractorphot(-potential|)-nside([0-9]+)-hp([0-9]+)-{specprod}\\.fits')
+    for k in ('observed', 'potential'):
+        assert all([target_re.match(os.path.basename(filename)) is not None or target_hp_re.match(os.path.basename(filename)) is not None for filename in target[k]])
+        assert all([tractor_re.match(os.path.basename(filename)) is not None for filename in tractor[k]])
+    return (target_re, target_hp_re, tractor_re)
+
+
+def gather_file_info(filenames, res, hdu='TARGETPHOT'):
+    """Gather file size and number of rows.
+    """
+    file_info = {'observed': dict(), 'potential': dict()}
+    for k in ('observed', 'potential'):
+        for filename in filenames[k]:
+            b = os.path.basename(filename)
+            m = res[0].match(b)
+            if hdu == 'TARGETPHOT':
+                m = res[0].match(b)
+                m_hp = res[1].match(b)
+            else:
+                m = None
+                m_hp = res[0].match(b)
+            groups = m_hp.groups() if m is None else m.groups()
+            with fits.open(filename, readonly=True) as hdulist:
+                rows = hdulist[hdu].header['NAXIS2']
+            file_info[k][b] = {'fullname': filename,
+                               'hp': (m_hp is not None),
+                               'size': os.path.getsize(filename),
+                               'groups': groups,
+                               'rows': rows}
+    return file_info
+
+
+def fmt_bytes(b):
+    """Convert integer bytes `b` to a formatted string.
+    """
+    prefix = ('', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y', 'R', 'Q')
+    bb = float(b)
+    p = 0
+    while bb > 1024.0:
+        bb /= 1024.0
+        p += 1
+    return f"{bb:.3g} {prefix[p]}B"
+
+
+def target_statistics(specprod, info):
+    """Gather and format statistics on target files.
+    """
+    table = dict()
+    for k in ('observed', 'potential'):
+        table[k] = ['| File Name | File Size | Number of Targets | Notes |',
+                    '|-----------|:---------:|:-----------------:|-------|']
+        hp_totals = dict()
+        for f in sorted(info[k].keys()):
+            if info[k][f]['groups'][-2] is None:
+                survey, program = '', ''
+            else:
+                if info[k][f]['groups'][-1] is None:
+                    survey = info[k][f]['groups'][-2].replace('-', '')
+                    program = ''
                 else:
-                    print(f'Missing {_onefile}')
-            szs.append(np.sum(np.array(_szs, dtype=np.int64)))
-            nrows.append(np.sum(np.array(_nrows, dtype=np.int64)))
-        else:
-            if os.path.isfile(onefile):
-                szs.append(np.int64(os.stat(onefile).st_size))
-                nrows.append(np.int64(fitsio.FITS(onefile)[1].get_nrows()))
+                    survey, program = info[k][f]['groups'][-2].replace('-', ''), info[k][f]['groups'][-1].replace('-', '')
+            if info[k][f]['hp']:
+                if (survey, program) in hp_totals:
+                    hp_totals[(survey, program)]['size'] += info[k][f]['size']
+                    hp_totals[(survey, program)]['rows'] += info[k][f]['rows']
+                else:
+                    g = info[k][f]['groups']
+                    if program:
+                        name = f"targetphot{g[0]}-nside{g[1]}-hp[0-9]{{{len(g[2])}}}-{survey}-{program}-{specprod}\\.fits"
+                    else:
+                        name = f"targetphot{g[0]}-nside{g[1]}-hp[0-9]{{{len(g[2])}}}-{survey}-{specprod}\\.fits"
+                    hp_totals[(survey, program)] = {'size': info[k][f]['size'],
+                                                    'rows': info[k][f]['rows'],
+                                                    'name': name}
             else:
-                szs.append(np.int64(0))
-                nrows.append(np.int64(0))
-                print(f'Missing {onefile}')
-    print(nrows, szs)
-    szs = np.array(szs, dtype=np.int64)
-    nrows = np.array(nrows, dtype=np.int64)
-    if len(nrows) == 0:
-        return
-    print(nrows, szs)
-
-    srt = np.argsort(nrows)[::-1]
-    # srt = np.arange(len(nrows))
-    filelist_srt = [filelist[i] for i in srt.tolist()]
-
-    print('| File Name | File Size | Number of Targets | Notes |')
-    print('|-----------|:---------:|:-----------------:|-------|')
-    for onefile, nrow, sz in zip(filelist_srt, nrows[srt], szs[srt]):
-        print(onefile, nrow, sz)
-        if sz > 1024**2 and sz < 1024**3:
-            sz /= 1024**2
-            unit = 'MB'
-            fmt = ''
-        else:
-            sz /= 1024**3
-            unit = 'GB'
-
-        if type(onefile) == list:
-            # iron/main potential targets are a list
-            # basefile = os.path.basename(onefile[0])
-            survey = 'main'
-            if 'potential' in subdir:
-                targsuffix = '-potential'
+                if survey:
+                    if program:
+                        table[k].append(f"| {f} | {fmt_bytes(info[k][f]['size'])} | {info[k][f]['rows']:,d} | {survey}, {program} |")
+                    else:
+                        table[k].append(f"| {f} | {fmt_bytes(info[k][f]['size'])} | {info[k][f]['rows']:,d} | {survey} |")
+                else:
+                    table[k].append(f"| {f} | {fmt_bytes(info[k][f]['size'])} | {info[k][f]['rows']:,d} | Concatenation of all files. |")
+        for survey, program in hp_totals:
+            if program:
+                table[k].append(f"| {hp_totals[(survey, program)]['name']} | {fmt_bytes(hp_totals[(survey, program)]['size'])} | {hp_totals[(survey, program)]['rows']:,d} | {survey}, {program} |")
             else:
-                targsuffix = ''
-            basefile = f'{subdir}/targetphot{targsuffix}-nside?-hp[0-9][0-9][0-9]?-{survey}-{specprod}.fits'
-        else:
-            basefile = os.path.basename(onefile)
-            survey = basefile.split('-')[1]
-            if survey == 'potential':
-                survey = basefile.split('-')[2]
-            basefile = os.path.join(subdir, basefile)
-        notes = dsurvey[survey].replace('XX', str(len(filelist)-1))
+                table[k].append(f"| {hp_totals[(survey, program)]['name']} | {fmt_bytes(hp_totals[(survey, program)]['size'])} | {hp_totals[(survey, program)]['rows']:,d} | {survey} |")
+        table[k].append('')
+    return table
 
-        print(f'| {basefile} | {sz:.3g} {unit} | {nrow:,d} | {notes} |')
+
+def tractor_statistics(specprod, info):
+    """Gather and format statistics on tractor files.
+    """
+    table = dict()
+    for k in ('observed', 'potential'):
+        table[k] = ['| File Name | File Size | Number of Targets | Notes |',
+                    '|-----------|:---------:|:-----------------:|-------|']
+        ex = info[k][list(info[k].keys())[0]]
+        generic_name = f"tractorphot{ex['groups'][0]}-nside{ex['groups'][1]}-hp[0-9]{{{len(ex['groups'][2])}}}-{specprod}\\.fits"
+        total_size = sum([info[k][f]['size'] for f in info[k]])
+        total_rows = sum([info[k][f]['rows'] for f in info[k]])
+        table[k].append(f"| {generic_name} | {fmt_bytes(total_size)} | {total_rows:,d} | |")
+        table[k].append('')
+    return table
+
+
+def validation_pairs(target):
+    """Pair observed target files with corresponding potential target files.
+    """
+    pairs = dict()
+    for t in target['observed']:
+        foo = os.path.basename(t).split('-')
+        if 'nside' in foo[1]:
+            if len(foo) == 5:
+                survey = foo[3]
+                program = ''
+            else:
+                survey = foo[3]
+                program = foo[4]
+            if (survey, program) in pairs:
+                pairs[(survey, program)][0].append(t)
+            else:
+                foo[1] = 'nside?'
+                foo[2] = 'hp*'
+                foo.insert(1, 'potential')
+                bar = glob.glob(os.path.join(os.path.dirname(os.path.dirname(t)), 'potential-targets', '-'.join(foo)))
+                for b in bar:
+                    assert b in target['potential']
+                pairs[(survey, program)] = [[t, ], bar]
+        else:
+            survey = foo[1]
+            if len(foo) == 4:
+                program = foo[2]
+            else:
+                program = ''
+            foo.insert(1, 'potential')
+            bar = os.path.join(os.path.dirname(os.path.dirname(t)), 'potential-targets', '-'.join(foo))
+            assert bar in target['potential']
+            pairs[(survey, program)] = [t, bar]
+    return pairs
 
 
 def main():
@@ -143,101 +229,73 @@ def main():
     p.add_argument('--validate', action='store_true', help='Validate the files.')
     p.add_argument('outdir', metavar='DIR', help='Output directory.')
     args = p.parse_args()
-
-    if args.specprod == 'fuji':
-        surveys = ['cmx', 'special', 'sv1', 'sv2', 'sv3']
-    elif args.specprod == 'guadalupe':
-        surveys = ['special', 'main']
-    else:
-        surveys = ['cmx', 'special', 'sv1', 'sv2', 'sv3', 'main']
-    programs = ('backup', 'bright', 'dark', 'other')
-
+    #
+    # Find files.
+    #
+    target, tractor = find_files(args.outdir)
+    #
     # Do statistics.
+    #
     if args.statistics:
-        # targetphot files
-        for targtype, targsuffix in zip(['observed', 'potential'], ['', '-potential']):
-            print(f'targetphot - {targtype} targets')
-            filelist = list()
-            if args.specprod == 'fuji':
-                for survey in surveys:
-                    filelist.append(os.path.join(args.outdir, '{}-targets'.format(targtype),
-                                                 'targetphot{}-{}-{}.fits'.format(targsuffix, survey, args.specprod)))
-                filelist.append(os.path.join(args.outdir, '{}-targets'.format(targtype),
-                                             'targetphot{}-{}.fits'.format(targsuffix, args.specprod)))
-            elif args.specprod in ('guadalupe', 'iron'):
-                for survey in surveys:
-                    filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
-                                                f'targetphot{targsuffix}-{args.specprod}.fits'))
-            else:
-                for survey in surveys:
-                    for program in programs:
-                        if survey == 'main':
-                            mainlist = sorted(glob(os.path.join(args.outdir, f'{targtype}-targets',
-                                                                f'targetphot{targsuffix}-nside2-hp??-{survey}-{program}-{args.specprod}.fits')))
-                            filelist.append(mainlist)
-                        else:
-                            filelist.append(os.path.join(args.outdir, f'{targtype}-targets',
-                                                         f'targetphot{targsuffix}-{survey}-{program}-{args.specprod}.fits'))
-
-            # filelist = np.array(filelist, dtype=object)
-            fileinfo(filelist, args.specprod, '{}-targets'.format(targtype))
-            print()
-
-        # tractorphot files
-        for targtype, targsuffix in zip(['observed', 'potential'], ['', '-potential']):
-            print('tractorphot - {} targets'.format(targtype))
-            filelist = glob(os.path.join(args.outdir, '{}-targets'.format(targtype), 'tractorphot',
-                                         'tractorphot{}-nside?-hp???-{}.fits'.format(targsuffix, args.specprod)))
-            nfiles = len(filelist)
-            sz, nobj = [], []
-            for onefile in filelist:
-                sz.append(os.stat(onefile).st_size)
-                nobj.append(fitsio.FITS(onefile)[1].get_nrows())
-            sz = np.sum(sz)
-            nobj = np.sum(nobj)
-            print(sz, nobj)
-            if sz > 1024**2 and sz < 1024**3:
-                sz /= 1024**2
-                unit = 'MB'
-                fmt = ''
-            else:
-                sz /= 1024**3
-                unit = 'GB'
-            print('| Data Release | Relative Location of *tractorphot* Files | Number of Files | Total Data Volume | Total Number of Objects |')
-            print('|--------------|------------------------------------------|:---------------:|:-----------------:|:-----------------------:|')
-            print('| {} | {}-targets/tractorphot/tractorphot{}-nside[48]-hp[0-9][0-9][0-9]-{}.fits | {} | {:.3g} {} | {} |'.format(
-                  args.specprod, targtype, targsuffix, args.specprod, nfiles, sz, unit, nobj))
-            print()
-
+        target_re, target_hp_re, tractor_re = verify_filenames(args.specprod, target, tractor)
+        target_info = gather_file_info(target, (target_re, target_hp_re))
+        tractor_info = gather_file_info(tractor, (tractor_re, ), hdu='TRACTORPHOT')
+        target_tables = target_statistics(args.specprod, target_info)
+        tractor_tables = tractor_statistics(args.specprod, tractor_info)
+        statistics_report = [f'# Summary of desi-photometry files for {args.specprod}',
+                             '',
+                             '## target files, observed',
+                             '']
+        statistics_report += target_tables['observed']
+        statistics_report += ['## target files, potential', '']
+        statistics_report += target_tables['potential']
+        statistics_report += ['## tractor files, potential', '']
+        statistics_report += tractor_tables['observed']
+        statistics_report += ['## tractor_files, potential', '']
+        statistics_report += tractor_tables['potential']
+        print("\n".join())
+    #
     # Validate files.
+    #
     if args.validate:
-        for survey in surveys:
-            for program in programs:
-                print('Working on survey, program {}, {}.'.format(survey, program))
-                obsfile = os.path.join(args.outdir, 'observed-targets', 'targetphot-{}-{}-{}.fits'.format(survey, program, args.specprod))
-                potfile = os.path.join(args.outdir, 'potential-targets', 'targetphot-potential-{}-{}-{}.fits'.format(survey, program, args.specprod))
-                # if not os.path.isfile(obsfile):
-                #    continue
-
-                obs = Table(fitsio.read(obsfile))
-                print('Read {:,d} objects from {}'.format(len(obs), obsfile))
-                pot = Table(fitsio.read(potfile))
-                print('Read {:,d} objects from {}'.format(len(pot), potfile))
-
-                # obs = obs[obs['TILEID'] == 80870]
-
-                tileids = sorted(set(obs['TILEID']))
-                print('Processing {} unique tiles'.format(len(tileids)))
-
-                # Multiprocess over tiles
-                mpargs = [[tileid, obs[obs['TILEID'] == tileid], pot[pot['TILEID'] == tileid]] for tileid in tileids]
-
-                if args.mp > 1:
-                    with multiprocessing.get_context('fork').Pool(args.mp) as P:
-                        P.map(_targets_one_tile, mpargs)
-                else:
-                    [targets_one_tile(*mparg) for mparg in mpargs]
-            print()
+        #
+        # Pair observed targetphot files with potentials.
+        #
+        pairs = validation_pairs(target)
+        for survey, program in pairs:
+            print('Working on survey, program {}, {}.'.format(survey, program))
+            obs_files = pairs[(survey, program)][0]
+            pot_files = pairs[(survey, program)][1]
+            if isinstance(obs_files, str):
+                obs_files = [obs_files]
+                pot_files = [pot_files]
+            obs_tables = list()
+            for obs_file in obs_files:
+                obs = Table.read(obs_file, hdu='TARGETPHOT')
+                print('Read {:,d} objects from {}'.format(len(obs), obs_file))
+                obs_tables.append(obs)
+            pot_tables = list()
+            for pot_file in pot_files:
+                pot = Table.read(pot_file, hdu='TARGETPHOT')
+                print('Read {:,d} objects from {}'.format(len(pot), pot_file))
+                pot_tables.append(pot)
+            if len(obs_files) == 1:
+                obs = obs_tables[0]
+                pot = pot_tables[0]
+            else:
+                obs = hstack(obs_tables)
+                pot = hstack(pot_tables)
+            tileids = np.unique(obs['TILEID'])
+            print('Processing {} unique tiles'.format(len(tileids)))
+            #
+            # Multiprocess over tiles
+            #
+            mpargs = [[tileid, obs[obs['TILEID'] == tileid], pot[pot['TILEID'] == tileid]] for tileid in tileids]
+            if args.mp > 1:
+                with multiprocessing.get_context('fork').Pool(args.mp) as P:
+                    P.map(_targets_one_tile, mpargs)
+            else:
+                [targets_one_tile(*mparg) for mparg in mpargs]
     return 0
 
 
