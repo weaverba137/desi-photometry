@@ -196,7 +196,7 @@ def validation_pairs(target):
                 foo[1] = 'nside?'
                 foo[2] = 'hp*'
                 foo.insert(1, 'potential')
-                bar = glob.glob(os.path.join(os.path.dirname(os.path.dirname(t)), 'potential-targets', '-'.join(foo)))
+                bar = glob(os.path.join(os.path.dirname(os.path.dirname(t)), 'potential-targets', '-'.join(foo)))
                 for b in bar:
                     assert b in target['potential']
                 pairs[(survey, program)] = [[t, ], bar]
