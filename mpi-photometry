@@ -15,7 +15,9 @@ Set up the software dependencies:
 srun --ntasks 128 $HOME/code/desihub/desi-photometry/mpi-photometry --outdir $PSCRATCH/lsdr9/kibo --zcatdir $DESI_ROOT_READONLY/spectro/redux/kibo/zcatalog/v1 --specprod kibo --targetphot
 
 """
-import os, time
+import os
+import sys
+import time
 import numpy as np
 import fitsio
 from glob import glob
@@ -1070,12 +1072,9 @@ def main():
     """
     import argparse
 
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--specprod', type=str, required=True, help='Spectroscopic production; output file prefix.')
-    parser.add_argument('--zcatdir', type=str, required=True, help='Redshift catalog base directory.')
-    parser.add_argument('--surveys', type=str, default=','.join(ALLSURVEYS), help='Comma-separated list of surveys to process.')
-    parser.add_argument('--programs', type=str, default=','.join(ALLPROGRAMS), help='Comma-separated list of programs to process.')
-    parser.add_argument('-O', '--outdir', default='$PSCRATCH/lsdr9', type=str, help='Base output data directory.')
+    parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]),
+                                     description="Match data release redshift catalogs against the original photometric (target) catalogs.",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--targetphot', action='store_true', help='Build the observed targets targeting catalogs.')
     parser.add_argument('--tractorphot', action='store_true', help='Build the observed targets tractor catalogs.')
@@ -1086,21 +1085,34 @@ def main():
     # parser.add_argument('--validate-targetphot', action='store_true', help='Validate the targetphot catalogs.')
     # parser.add_argument('--validate-tractorphot', action='store_true', help='Validate the photo-tractor catalogs.')
 
-    parser.add_argument('-m', '--mp', type=int, default=1, metavar='N',
-                        help='Number of multiprocessing processes per MPI rank or node (deprecated).')
-    parser.add_argument('--debug-ntiles', type=int, default=None, metavar='N',
-                        help='Debug with a smaller number of (test) tiles, e.g., --debug-ntiles=10.')
     parser.add_argument('--nside-tractorphot-observed', type=int, default=4, help='healpix nside for tractorphot-observed catalogs.')
     parser.add_argument('--nside-tractorphot-potential', type=int, default=8, help='healpix nside for tractorphot-potential catalogs.')
     parser.add_argument('--nside-targetphot-observed', type=int, default=1, help='healpix nside for targetphot-observed catalogs.')
     parser.add_argument('--nside-targetphot-potential', type=int, default=2, help='healpix nside for targetphot-potential catalogs.')
 
+    parser.add_argument('-D', '--debug-ntiles', type=int, default=None, metavar='N',
+                        help='Debug with a smaller number of (test) tiles, e.g., --debug-ntiles=10.')
+    parser.add_argument('-m', '--mp', type=int, default=1, metavar='N',
+                        help='Number of multiprocessing processes per MPI rank or node (deprecated).')
     parser.add_argument('-M', '--no-mpi', action='store_true', dest='nompi',
                         help='Do not use MPI parallelism.')
+    parser.add_argument('-O', '--outdir', default='$PSCRATCH/lsdr9', type=str,
+                        help='Base output data directory.')
     parser.add_argument('-o', '--overwrite', action='store_true',
                         help='Overwrite existing files; use with care.')
+    parser.add_argument('-s', '--surveys', type=str,
+                        default=','.join(ALLSURVEYS),
+                        help='Comma-separated list of surveys to process.')
+    parser.add_argument('-p', '--programs', type=str,
+                        default=','.join(ALLPROGRAMS),
+                        help='Comma-separated list of programs to process.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Print extra debugging information.")
+    parser.add_argument('-z', '--zcatdir', type=str, required=True,
+                        help='Redshift catalog base directory.')
+    parser.add_argument('specprod',
+                        help='Spectroscopic production; output file prefix.')
+
     args = parser.parse_args()
 
     args.outdir = os.path.expandvars(args.outdir)
@@ -1147,7 +1159,8 @@ def main():
                     surveys=args.surveys, programs=args.programs,
                     nside=args.nside_tractorphot_potential,
                     overwrite=args.overwrite, potential=True, verbose=args.verbose)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
