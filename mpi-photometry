@@ -21,7 +21,7 @@ import time
 import numpy as np
 import fitsio
 from glob import glob
-from astropy.table import Table, vstack
+from astropy.table import Table, vstack, MaskedColumn
 
 from desitarget import geomask
 from desiutil.depend import add_dependencies, possible_dependencies
@@ -188,12 +188,23 @@ def tractorphot_onebrick(cat, RACOLUMN='TARGET_RA', DECCOLUMN='TARGET_DEC', verb
 
     """
     from desispec.io.photo import gather_tractorphot
-
+    #
+    # Make it easier to cut out blank values of PHOTSYS.
+    #
+    if isinstance(cat['PHOTSYS'], MaskedColumn):
+        cat['PHOTSYS'].fill_value = ''
+        cat['PHOTSYS'] = cat['PHOTSYS'].filled()
+    #
     # Separate out the non-DR9 targets, i.e., those with BRICK_OBJID==0, since
     # they are handled correctly in gather_tractorphot and may have DR9
     # photometry based on a positional match.
-    Idr9 = np.where((cat['RELEASE'] > 0) * (cat['BRICKID'] > 0) *
-                    (cat['BRICK_OBJID'] > 0) * (cat['PHOTSYS'] != ''))[0]
+    #
+    Idr9 = np.where((cat['RELEASE'] > 0) & (cat['BRICKID'] > 0) &
+                    (cat['BRICK_OBJID'] > 0) &
+                    (cat['PHOTSYS'] != 'G') &
+                    (cat['PHOTSYS'] != 'P') &
+                    (cat['PHOTSYS'] != 'X') &
+                    (cat['PHOTSYS'] != ''))[0]
     Ipos = np.delete(np.arange(len(cat)), Idr9)
 
     cat_pos = cat[Ipos]
